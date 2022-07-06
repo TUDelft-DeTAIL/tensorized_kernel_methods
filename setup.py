@@ -1,6 +1,7 @@
 from setuptools import setup, find_packages
 
 base_requirements = [
+    'git+https://github.com/deepmind/jmp'
 ]
 
 cpu_requirements = [
@@ -16,6 +17,7 @@ dev_requirements = [
     'pandas',
 ]
 
+
 setup(
     name='tkl',
     version='0.0.1',
@@ -26,5 +28,6 @@ setup(
         'dev': dev_requirements,
         'gpu': gpu_requirements,
         'cpu': cpu_requirements,
+        'mp': mp_requirements,
     },
 )

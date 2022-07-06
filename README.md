@@ -24,6 +24,24 @@ https://github.com/google/jax/blob/main/README.md#pip-installation-gpu-cuda
 
 `pip install "jax[cuda11_cudnn805]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html` --> !!! WARNING: jax 0.3.14 does not provide the extra 'cuda11_cudnn811' !!!
 
+### Mixed Precision
+
+https://jax.readthedocs.io/en/latest/design_notes/type_promotion.html#mixed-promotion-integer-and-floating
+
+https://github.com/deepmind/jmp
+
+`pip install git+https://github.com/deepmind/jmp`
+
+#### TODO
+- take out init from fit?
+    - makes W more explicit for casting
+- introduce cast_policy in fit function 
+- introduce cast_policy in feature_map function 
+- introduce cast_policy in vmap_dotkron function 
+- loss function
+- error function
+- predict function
+
 ## TKR
 `pip install -e ".[dev]"`
 

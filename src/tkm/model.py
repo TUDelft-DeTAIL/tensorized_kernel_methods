@@ -8,6 +8,8 @@ from tkm.features import polynomial, compile_feature_map, fourier
 from tkm.utils import dotkron, vmap_dotkron
 from jax import jit,vmap
 
+import jmp
+
 
 def init(
     key,
@@ -47,9 +49,8 @@ def fit( # TODO: type hinting
     lengthscale: float = 0.5, # TODO: default value
     numberSweeps: int = 10, # TODO: default value
     feature_map=polynomial,
-    # feature_str = "polynomial",
-    # feature_idx: int = 0,
     W = None,
+    policy = None,
 ):
     """
     input
@@ -69,6 +70,9 @@ def fit( # TODO: type hinting
         loss
         error: list of errors per ALS step
     """
+
+    if policy is None:
+        policy = jmp.get_policy("full")
 
     # feature_map = feature_list[feature_idx]
 
