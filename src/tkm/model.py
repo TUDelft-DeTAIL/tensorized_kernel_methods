@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax.numpy as jnp
 from jax import random
 # from jax.numpy.linalg import solve
@@ -5,38 +7,10 @@ from jax import random
 # from jax.scipy.linalg import kharti_rao
 
 from tkm.features import polynomial, compile_feature_map, fourier
-from tkm.utils import dotkron, vmap_dotkron
+from tkm.utils import vmap_dotkron
 from jax import jit,vmap
 
 import jmp
-
-
-def init(
-    key,
-    X,
-    M: int = 8,
-    R: int = 10,
-):
-    """
-    Separating the fit function into initialization (init) and
-     out the initialization from the 
-    """
-    N,D = X.shape #jnp.shape(X)
-    W = random.normal(key, shape=(D,M,R))
-    # list(range(D)) # TODO: JAX
-    Matd = jnp.ones((N,R))
-    reg = jnp.ones((R,R))
-    
-    # initializaiton of cores
-    # intializing with the constant cores already contracted
-    for d in range(D-1, -1, -1):
-        # W[d] = 
-        W = W.at[d].divide(jnp.linalg.norm(W[d]))                  # TODO: check if this is necessary
-        reg *= (W[d].T @ W[d])           # reg has shape R * R
-        Mati = polynomial(X[:,d])                       # TODO implement features function
-        Matd *= Mati @ W[d]            # Matd has shape N * R, contraction of phi_x_d * w_d
-
-    return W, reg, Matd
 
 
 def fit( # TODO: type hinting
@@ -76,21 +50,27 @@ def fit( # TODO: type hinting
 
     # feature_map = feature_list[feature_idx]
 
-    features = compile_feature_map(feature_map, M=M, lengthscale=lengthscale)
+    #TODO check if this is necessary or if it is better to pass compiled function
+    # TODO compile_feature_map is not compiling !!!
+    # features = compile_feature_map(feature_map, M=M, lengthscale=lengthscale) 
+    features = partial(feature_map, M=M, lengthscale=lengthscale, policy=policy)
+    dotkron = partial(vmap_dotkron, policy=policy)
     # polynomial_compiled = jit(partial(polynomial, M=M))
+
 
     N,D = X.shape #jnp.shape(X)
     W = random.normal(key, shape=(D,M,R)) if W is None else W
     # list(range(D)) # TODO: JAX
     Matd = jnp.ones((N,R))
     reg = jnp.ones((R,R))
+    X,y,l,W,Matd,reg = policy.cast_to_compute((X,y,l,W,Matd,reg))
     
     # initializaiton of cores
     # intializing with the constant cores already contracted
     for d in range(D-1, -1, -1):
         W = W.at[d].divide(jnp.linalg.norm(W[d])) if W is None else W       # TODO: check if this is necessary
         reg *= jnp.dot(W[d].T, W[d])           # reg has shape R * R
-        Mati = features(X[:,d])
+        Mati = features(X[:,d])                # precision casted to output of features
         Matd *= jnp.dot(Mati, W[d])            # Matd has shape N * R, contraction of phi_x_d * w_d
 
     # D,M,R = W.shape
@@ -100,14 +80,18 @@ def fit( # TODO: type hinting
     # i=0
     for s in range(numberSweeps): #TODO fori jax loop
         for d in range(D): #TODO fori jax loop
+            if s != 0 and d != 0:
+                reg *= jnp.dot(W[d].T, W[d])
+                Matd *= jnp.dot(Mati, W[d])
+
             # compute phi(x_d)
             Mati = features(X[:,d])                               
             # undoing the d-th element from Matd (contraction of all cores)
             Matd /= jnp.dot(Mati, W[d])                                      
-            C = vmap_dotkron(Mati,Matd)                                  # N by M_hat*R
+            C = dotkron(Mati,Matd) # TODO check if this violates jit # N by M_hat*R
             reg /= jnp.dot(W[d].T, W[d])                                    # regularization term
             regularization = l * jnp.kron(reg, jnp.eye(M)) # TODO: this results in sparse matrix, check if multiplications with 0 need to be avoided
-            x = jnp.linalg.solve(                                   # solve systems of equations
+            x = jnp.linalg.solve(                                   # solve systems of equations, TODO: is this done in casted precision?
                 (jnp.dot(C.T, C) + regularization), 
                 jnp.dot(C.T, y)
             )
@@ -116,10 +100,8 @@ def fit( # TODO: type hinting
             # loss = jnp.linalg.norm(C @ x - y)**2 + x.T @ regularization @ x )  #TODO check if **2 is necessary (can it be done in function call of norm)
             # error =  jnp.mean(jnp.sign(C @ x) != y) # TODO not equal elementwise   # classification; for regression mean(((C*x)-y).^2)
             W = W.at[d].set( x.reshape((M,R)) )
-            reg *= jnp.dot(W[d].T, W[d])
-            Matd *= jnp.dot(Mati, W[d])
             # i+=1
-    return W #, loss #error
+    return policy.cast_to_output(W) #, loss #error
 
 
 @jit
@@ -167,3 +149,31 @@ def predict_vmap(
     return vmap(
         lambda x,y :jnp.dot(features(x),y), (1,0),
     )(X, W).prod(0).sum(1)
+
+
+def init(
+    key,
+    X,
+    M: int = 8,
+    R: int = 10,
+):
+    """
+    Separating the fit function into initialization (init) and
+     out the initialization from the 
+    """
+    N,D = X.shape #jnp.shape(X)
+    W = random.normal(key, shape=(D,M,R))
+    # list(range(D)) # TODO: JAX
+    Matd = jnp.ones((N,R))
+    reg = jnp.ones((R,R))
+    
+    # initializaiton of cores
+    # intializing with the constant cores already contracted
+    for d in range(D-1, -1, -1):
+        # W[d] = 
+        W = W.at[d].divide(jnp.linalg.norm(W[d]))                  # TODO: check if this is necessary
+        reg *= (W[d].T @ W[d])           # reg has shape R * R
+        Mati = polynomial(X[:,d])                       # TODO implement features function
+        Matd *= Mati @ W[d]            # Matd has shape N * R, contraction of phi_x_d * w_d
+
+    return W, reg, Matd

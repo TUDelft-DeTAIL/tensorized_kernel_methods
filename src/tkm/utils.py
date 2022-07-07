@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jax import jit
 from jax import vmap
-
+import jmp
 
 # @jit
 def dotkron(a, b):
@@ -23,6 +23,11 @@ def dotkron(a, b):
     return jnp.vstack([jnp.kron(a[k, :], b[k, :]) for k in jnp.arange(b.shape[0])])
 
 
-@jit
-def vmap_dotkron(a,b):
-    return vmap(jnp.kron)(a, b)
+# @jit
+def vmap_dotkron(a,b,policy):
+    if policy is None:
+        policy = jmp.get_policy("full")
+
+    a,b = policy.cast_to_compute((a,b))
+    
+    return policy.cast_to_output(vmap(jnp.kron)(a, b))

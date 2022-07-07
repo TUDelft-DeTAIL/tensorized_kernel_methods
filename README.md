@@ -35,9 +35,14 @@ https://github.com/deepmind/jmp
 #### TODO
 - take out init from fit?
     - makes W more explicit for casting
-- introduce cast_policy in fit function 
-- introduce cast_policy in feature_map function 
-- introduce cast_policy in vmap_dotkron function 
+    - Mati and Matd variables?
+- introduce cast_policy in fit function
+    - compute: X,y,l,W,Matd,reg
+    - output: W
+- introduce cast_policy in feature_map function
+    - compute: X
+    - output: feature_map
+- introduce cast_policy in vmap_dotkron function
 - loss function
 - error function
 - predict function
