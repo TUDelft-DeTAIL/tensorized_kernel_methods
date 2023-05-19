@@ -8,12 +8,15 @@ from jax import random
 from tkm.features import polynomial, compile_feature_map, fourier
 from tkm.utils import dotkron, vmap_dotkron, batched_dotkron, vmap_dotkron_new
 from jax import jit,vmap
-# import jmp
+import jmp
+
+
+full_policy = jmp.get_policy("float32")
 
 
 def dotkron(batch_size=None):
     if batch_size is None:
-        return vmap_dotkron_new # TODO: should have the right return types
+        return partial(vmap_dotkron_new) # TODO: should have the right return types
     else:
         return partial(batched_dotkron, batch_size=batch_size)
 
@@ -21,8 +24,12 @@ def dotkron(batch_size=None):
 class TensorizedKernelMachine(object):
     def __init__(
         self, 
-        dotkron = dotkron(batch_size=None),
-        policy = None,
+        *args,
+        policy = full_policy,
+        batch_size = None,
+        # dotkron = dotkron(batch_size=None,policy=full_policy),
+        feature_map=polynomial,
+        # policy = full_policy,
         **kwargs,
     ):
         # Fine for JAX since this is a constant.
@@ -30,10 +37,12 @@ class TensorizedKernelMachine(object):
         
         # This is equivalent to `jax.jit(partial(Experiment.forward, self))`.
 
-        self.dotkron = jit(dotkron)
+        self.dotkron = jit(partial(dotkron(batch_size=batch_size), policy=policy))
 
         self.fit = jit(partial(self.fit, **kwargs))
         self.predict = jit(partial(self.predict_vmap, **kwargs))
+
+        self.features = compile_feature_map(feature_map, *args, **kwargs)
 
     def fit(
         self,
@@ -45,8 +54,8 @@ class TensorizedKernelMachine(object):
         l: float = 1e-5,
         lengthscale: float = 0.5,
         numberSweeps: int = 10,
-        feature_map=polynomial,
         W = None,
+        policy = None,
         **kwargs,
     ):
         """
@@ -73,7 +82,7 @@ class TensorizedKernelMachine(object):
 
         # feature_map = feature_list[feature_idx]
 
-        features = compile_feature_map(feature_map, M=M, lengthscale=lengthscale)
+        # features = compile_feature_map(feature_map, M=M, lengthscale=lengthscale)
         # polynomial_compiled = jit(partial(polynomial, M=M))
 
         N,D = X.shape #jnp.shape(X)
@@ -87,7 +96,7 @@ class TensorizedKernelMachine(object):
         for d in range(D-1, -1, -1):
             W = W.at[d].divide(jnp.linalg.norm(W[d])) if W is None else W       # TODO: check if this is necessary
             reg *= jnp.dot(W[d].T, W[d])           # reg has shape R * R
-            Mati = features(X[:,d])
+            Mati = self.features(X[:,d])
             Matd *= jnp.dot(Mati, W[d])            # Matd has shape N * R, contraction of phi_x_d * w_d
 
         # D,M,R = W.shape
@@ -98,7 +107,7 @@ class TensorizedKernelMachine(object):
         for s in range(numberSweeps): #TODO fori jax loop
             for d in range(D): #TODO fori jax loop
                 # compute phi(x_d)
-                Mati = features(X[:,d])                               
+                Mati = self.features(X[:,d])                               
                 # undoing the d-th element from Matd (contraction of all cores)
                 Matd /= jnp.dot(Mati, W[d])                                      
                 
@@ -130,17 +139,18 @@ class TensorizedKernelMachine(object):
         X, 
         W, 
         # hyperparameters,
-        feature_map=polynomial,
-        *args,**kwargs,
+        *args,
+        # feature_map=polynomial,
+        **kwargs,
     ):
-        features = compile_feature_map(feature_map, *args,**kwargs)
+        # features = compile_feature_map(feature_map, *args, **kwargs)
         N, D = X.shape
         M = W[0].shape[0]
         # polynomial = compile_feature_map(M=M)
         score = jnp.ones((N,1))
         for d in range(D): #TODO JAX fori
             score *= jnp.dot(
-                features(X[:,d]) , 
+                self.features(X[:,d]) , 
                 W[d]
             )
         score = jnp.sum(score, 1)
@@ -152,15 +162,13 @@ class TensorizedKernelMachine(object):
         self,
         X, 
         W, 
-        feature_map=polynomial,
-        *args,**kwargs,
+        *args,
+        # feature_map=polynomial,
+        policy = None,
+        **kwargs,
     ):
-        
-        # M = W[0].shape[0]
-        features = compile_feature_map(feature_map, *args,**kwargs)
-
         return vmap(
-            lambda x,y :jnp.dot(features(x),y), (1,0),
+            lambda x,y :jnp.dot(self.features(x),y), (1,0),
         )(X, W).prod(0).sum(1)
 
 

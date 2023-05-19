@@ -3,6 +3,8 @@ from jax import jit
 from jax import vmap
 import jmp
 
+float32 = jmp.get_policy("float32")
+
 # @jit
 def dotkron(a, b):
     """
@@ -28,9 +30,10 @@ def vmap_dotkron(a,b):
     return vmap(jnp.kron)(a, b)
 
 
-def vmap_dotkron_new(a, b, y): # TODO: check y
+def vmap_dotkron_new(a, b, y, policy=float32): # TODO: check y
+    a,b,y = policy.cast_to_compute((a,b,y))
     temp = vmap_dotkron(a,b)
-    return temp.T @ temp, temp.T @ y
+    return policy.cast_to_output((temp.T @ temp, temp.T @ y))
 
 def batched_dotkron(A,B,y,batch_size=10000, **kwargs):
     N,DA = A.shape
