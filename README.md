@@ -1,4 +1,4 @@
-# tensorized_kernel_methods
+# Tensorized Kernel Methods
 Efficient implementation of tensorized kernel methods for different hardware.
 
 
